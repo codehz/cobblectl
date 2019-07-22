@@ -1,0 +1,6 @@
+[submodule "deps/wsrpc"]
+	path = deps/wsrpc
+	url = git@github.com:codehz/wsrpc
+[submodule "deps/CLI11"]
+	path = deps/CLI11
+	url = git@github.com:CLIUtils/CLI11
