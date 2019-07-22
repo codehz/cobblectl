@@ -43,7 +43,7 @@ for choice in $choices; do
     tar xvf "${tempdir}/bds.tar.gz" -C .cobblestone/game
     ;;
   4)
-    echo "[=] downloading bds"
+    echo "[=] downloading cobblectl"
     wget -O "cobblectl" ${url_cobblectl}
     chmod +x cobblectl
   esac
