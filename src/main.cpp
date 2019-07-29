@@ -123,6 +123,7 @@ int main(int argc, char **argv) {
                         {"run/game", fs::absolute(".cobblestone/game")},
                         {"run/data", fs::absolute("start-service"_str)},
                         {"dev", "/dev"},
+                        {"sys", "/sys"},
                         {"proc", "/proc"},
                         {"tmp", "/tmp"},
                     },
@@ -294,7 +295,7 @@ int main(int argc, char **argv) {
           guard free_line{[&] { free(saved_line); }};
           rl_set_prompt("");
           rl_forced_update_display();
-          std::cout << data << std::flush;
+          std::cout << data << std::endl;
           rl_set_prompt(prompt.c_str());
           rl_insert_text(saved_line);
           rl_point = saved_point;
