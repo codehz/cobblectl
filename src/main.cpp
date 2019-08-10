@@ -2,7 +2,6 @@
 #include <CLI/CLI.hpp>
 #include <condition_variable>
 #include <csignal>
-#include <editline.h>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -11,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <thread>
+#include <unistd.h>
 
 #include "utils.hpp"
 
@@ -66,6 +66,22 @@ const auto service_name_validator = CLI::Validator(
       return {};
     },
     "PROFILE", "profile name");
+
+typedef enum { MODLOADER_LOG_TRACE, MODLOADER_LOG_DEBUG, MODLOADER_LOG_INFO, MODLOADER_LOG_WARN, MODLOADER_LOG_ERROR } modloader_log_level;
+
+const char *modloader_log_level_str(modloader_log_level level) {
+  if (level == MODLOADER_LOG_TRACE)
+    return "T";
+  if (level == MODLOADER_LOG_DEBUG)
+    return "D";
+  if (level == MODLOADER_LOG_INFO)
+    return "I";
+  if (level == MODLOADER_LOG_WARN)
+    return "W";
+  if (level == MODLOADER_LOG_ERROR)
+    return "E";
+  return "?";
+}
 
 namespace fs = std::filesystem;
 
@@ -280,135 +296,61 @@ int main(int argc, char **argv) {
   attach->callback([] {
     handle_fail([] {
       server_instance("attach-service"_str).start().then([] {
-        // server_instance().
-
         static auto prompt = "attach-service"_str + "> ";
-
-        constexpr auto wrapped_output = +[](std::string const &data) {
-          if (data.length() == 0)
-            return;
-
-          char *saved_line;
-          int saved_point;
-          saved_point = rl_point;
-          saved_line = strndup(rl_line_buffer, rl_end);
-          guard free_line{[&] { free(saved_line); }};
-          rl_set_prompt("");
-          rl_forced_update_display();
-          std::cout << data << std::endl;
-          rl_set_prompt(prompt.c_str());
-          rl_insert_text(saved_line);
-          rl_point = saved_point;
-          rl_forced_update_display();
+        static constexpr auto clear_line = [] {
+          if (isatty(0))
+            std::cout << "\33[2K\r" << std::flush;
         };
-
-        rl_callback_handler_install(prompt.c_str(), [](char *line) {
-          if (line == nullptr) {
-            ep->shutdown();
-            return;
+        static constexpr auto show_prompt = [] {
+          if (isatty(0))
+            std::cout << prompt << std::flush;
+        };
+        server_instance()
+            .on("core.log",
+                [](json data) {
+                  clear_line();
+                  std::cout << modloader_log_level_str(data["level"]) << " [" << data["tag"].get<std::string>() << "] " << data["content"].get<std::string>() << std::endl;
+                  show_prompt();
+                })
+            .fail(handle_fail<std::exception_ptr>);
+        server_instance()
+            .on("chat.recv",
+                [](json data) {
+                  clear_line();
+                  std::cout << "<" << data["sender"].get<std::string>() << "> " << data["content"].get<std::string>() << std::endl;
+                  show_prompt();
+                })
+            .fail(handle_fail<std::exception_ptr>);
+        std::thread([] {
+          std::string line;
+          while (true) {
+            clear_line();
+            show_prompt();
+            std::cin >> line;
+            if (!std::cin) {
+              ep->shutdown();
+              return;
+            }
+            if (line.empty())
+              continue;
+            server_instance()
+                .call("command.execute", json::object({
+                                             {"name", "attach-executor"_str},
+                                             {"command", line},
+                                         }))
+                .then([](json data) {
+                  clear_line();
+                  if (data["statusMessage"].is_string())
+                    std::cout << data["statusMessage"].get<std::string>() << std::endl;
+                  show_prompt();
+                  return;
+                })
+                .fail(handle_fail<std::exception_ptr>);
           }
-          guard line_guard{[&] { free(line); }};
-          server_instance()
-              .call("command.execute", json::object({
-                                           {"name", "attach-executor"_str},
-                                           {"command", line},
-                                       }))
-              .then([](json data) {
-                wrapped_output(data["statusMessage"].get<std::string>());
-                return;
-              })
-              .fail(handle_fail<std::exception_ptr>);
-        });
+        }).detach();
       });
-      ep->add(EPOLLIN, STDIN_FILENO, ep->reg([](epoll_event const &e) {
-        if (e.events & EPOLLERR || e.events & EPOLLHUP) {
-          std::cout << "bye!" << std::endl;
-          ep->shutdown();
-          return;
-        }
-        int nread;
-        ioctl(STDIN_FILENO, FIONREAD, &nread);
-        if (nread <= 0) {
-          ep->shutdown();
-        }
-        rl_callback_read_char();
-      }));
+      ep->wait();
     });
-    ep->wait();
   });
-  // auto attach = app.add_subcommand("attach", "attach to service's command
-  // interface"); attach->add_option("service", "attach-service"_str, "target
-  // service name")->required()->check(CLI::ExistingDirectory &
-  // service_name_validator); attach->add_option("--as", "attach-executor"_str,
-  // "executor name")->default_val("stonectl"); attach->callback([] {
-  //   handle_fail([] {
-  //     using namespace api;
-
-  //     static auto prompt = "attach-service"_str + "> ";
-
-  //     endpoint() =
-  //     std::make_unique<RPC::Client>(std::make_unique<client_wsio>("ws+unix://"
-  //     + "attach-service"_str + "/api.socket", ep)); static CoreService core;
-  //     static CommandService command;
-  //     static ChatService chat;
-
-  // constexpr auto wrapped_output = +[](std::string const &data) {
-  //   if (data.length() == 0) return;
-
-  //   char *saved_line;
-  //   int saved_point;
-  //   saved_point = rl_point;
-  //   saved_line  = strndup(rl_line_buffer, rl_end);
-  //   guard free_line{ [&] { free(saved_line); } };
-  //   rl_set_prompt("");
-  //   rl_forced_update_display();
-  //   std::cout << data;
-  //   rl_set_prompt(prompt.c_str());
-  //   rl_insert_text(saved_line);
-  //   rl_point = saved_point;
-  //   rl_forced_update_display();
-  // };
-
-  //     endpoint()->start().then([&] {
-  //       struct termios term;
-  //       tcgetattr(STDIN_FILENO, &term);
-  //       term.c_lflag &= ~ICANON;
-  //       term.c_cc[VTIME] = 1;
-  //       tcsetattr(STDIN_FILENO, TCSANOW, &term);
-
-  // rl_callback_handler_install(prompt.c_str(), [](char *line) {
-  //   if (line == nullptr) {
-  //     ep->shutdown();
-  //     return;
-  //   }
-  //   guard line_guard{ [&] { free(line); } };
-  //   if (line[0] == '/')
-  //     command.execute({ "attach-executor"_str, line
-  //     }).then(wrapped_output).fail(handle_fail<std::exception_ptr>);
-  //   else
-  //     chat.send({ "attach-executor"_str, line });
-  // });
-
-  //       core.log >> [](LogEntry const &entry) {
-  //         std::stringstream ss;
-  //         ss << print_level(entry.level) << " [" << entry.tag << "] " <<
-  //         entry.content << "\033[0m\n"; wrapped_output(ss.str());
-  //       };
-
-  //   ep->add(EPOLLIN, STDIN_FILENO, ep->reg([](epoll_event const &e) {
-  //     if (e.events & EPOLLERR || e.events & EPOLLHUP) {
-  //       std::cout << "bye!" << std::endl;
-  //       ep->shutdown();
-  //       return;
-  //     }
-  //     int nread;
-  //     ioctl(STDIN_FILENO, FIONREAD, &nread);
-  //     if (nread <= 0) { ep->shutdown(); }
-  //     rl_callback_read_char();
-  //   }));
-  // });
-  // ep->wait();
-  //   });
-  // });
   CLI11_PARSE(app, argc, argv);
 }
