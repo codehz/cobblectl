@@ -309,7 +309,7 @@ int main(int argc, char **argv) {
             .on("core.log",
                 [](json data) {
                   clear_line();
-                  std::cout << modloader_log_level_str(data["level"]) << " [" << data["tag"].get<std::string>() << "] " << data["content"].get<std::string>() << std::endl;
+                  std::cerr << modloader_log_level_str(data["level"]) << " [" << data["tag"].get<std::string>() << "] " << data["content"].get<std::string>() << std::endl;
                   show_prompt();
                 })
             .fail(handle_fail<std::exception_ptr>);
@@ -317,7 +317,7 @@ int main(int argc, char **argv) {
             .on("chat.recv",
                 [](json data) {
                   clear_line();
-                  std::cout << "<" << data["sender"].get<std::string>() << "> " << data["content"].get<std::string>() << std::endl;
+                  std::cerr << "<" << data["sender"].get<std::string>() << "> " << data["content"].get<std::string>() << std::endl;
                   show_prompt();
                 })
             .fail(handle_fail<std::exception_ptr>);
