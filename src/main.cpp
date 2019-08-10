@@ -292,13 +292,14 @@ int main(int argc, char **argv) {
     ep->wait();
   });
   auto attach = app.add_subcommand("attach", "attach to service's command interface");
-  attach->add_flag("--wait", "attach-wait"_flag, "wait for command");
+  attach->add_flag("--wait", "attach-wait"_flag, "wait for command (deperated)");
   attach->add_option("service", "attach-service"_str, "target service name")->required()->check(CLI::ExistingDirectory & service_name_validator);
   attach->callback([] {
     handle_fail([] {
       server_instance("attach-service"_str).start().then([] {
         static auto prompt = "attach-service"_str + "> ";
         static int wait = 0;
+        static bool done = false;
         static constexpr auto clear_line = [] {
           if (isatty(0))
             std::cout << "\33[2K\r" << std::flush;
@@ -329,15 +330,17 @@ int main(int argc, char **argv) {
             clear_line();
             show_prompt();
             if (!std::getline(std::cin, line)) {
-              if (wait)
+              done = true;
+              if (wait) {
+                std::cerr << "waiting for command result..." << std::endl;
                 return;
+              }
               ep->shutdown();
               return;
             }
             if (line.empty())
               continue;
-            if ("attach-wait"_flag)
-              wait++;
+            wait++;
             server_instance()
                 .call("command.execute", json::object({
                                              {"name", "attach-executor"_str},
@@ -348,8 +351,8 @@ int main(int argc, char **argv) {
                   if (data["statusMessage"].is_string())
                     std::cout << data["statusMessage"].get<std::string>() << std::endl;
                   show_prompt();
-                  if ("attach-wait"_flag)
-                    if (--wait == 0) ep->shutdown();
+                  if (--wait == 0 && !isatty(0) && done)
+                    ep->shutdown();
                   return;
                 })
                 .fail(handle_fail<std::exception_ptr>);
