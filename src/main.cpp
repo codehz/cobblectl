@@ -293,11 +293,12 @@ int main(int argc, char **argv) {
   });
   auto attach = app.add_subcommand("attach", "attach to service's command interface");
   attach->add_flag("--wait", "attach-wait"_flag, "wait for command (deperated)");
+  attach->add_option("--sender", "attach-executor"_str, "sender name");
   attach->add_option("service", "attach-service"_str, "target service name")->required()->check(CLI::ExistingDirectory & service_name_validator);
   attach->callback([] {
     handle_fail([] {
       server_instance("attach-service"_str).start().then([] {
-        static auto prompt = "attach-service"_str + "> ";
+        static auto prompt = ("attach-executor"_str.empty() ? "" : ("attach-executor"_str + "@")) + "attach-service"_str + "> ";
         static int wait = 0;
         static bool done = false;
         static constexpr auto clear_line = [] {
@@ -341,21 +342,38 @@ int main(int argc, char **argv) {
             if (line.empty())
               continue;
             wait++;
-            server_instance()
-                .call("command.execute", json::object({
-                                             {"name", "attach-executor"_str},
-                                             {"command", line},
-                                         }))
-                .then([](json data) {
-                  clear_line();
-                  if (data["statusMessage"].is_string())
-                    std::cout << data["statusMessage"].get<std::string>() << std::endl;
-                  show_prompt();
-                  if (--wait == 0 && !isatty(0) && done)
-                    ep->shutdown();
-                  return;
-                })
-                .fail(handle_fail<std::exception_ptr>);
+            if (line[0] == '/')
+              server_instance()
+                  .call("command.execute", json::object({
+                                               {"name", "attach-executor"_str},
+                                               {"command", line},
+                                           }))
+                  .then([](json data) {
+                    clear_line();
+                    if (data["statusMessage"].is_string())
+                      std::cout << data["statusMessage"].get<std::string>() << std::endl;
+                    show_prompt();
+                    if (--wait == 0 && !isatty(0) && done)
+                      ep->shutdown();
+                    return;
+                  })
+                  .fail(handle_fail<std::exception_ptr>);
+            else
+              server_instance()
+                  .call("chat.send", json::object({
+                                         {"sender", "attach-executor"_str},
+                                         {"content", line},
+                                     }))
+                  .then([](json data) {
+                    clear_line();
+                    std::cout << "sent" << std::endl;
+                    show_prompt();
+                    if (--wait == 0 && !isatty(0) && done)
+                      ep->shutdown();
+                    return;
+                  })
+                  .fail(handle_fail<std::exception_ptr>);
+            ;
           }
         }).detach();
       });
