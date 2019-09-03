@@ -46,6 +46,10 @@ for choice in $choices; do
     echo "[=] downloading cobblectl"
     wget -O "cobblectl" ${url_cobblectl}
     chmod +x cobblectl
+    echo "Create a folder at first ( mkdir test )"
+    echo "Usage: ./cobblectl start --wait test"
+    echo "Stop the server: ./cobblectl stop --wait test"
+    echo "To use cli: ./cobblectl attach test"
   esac
 done
 exit
